@@ -19,24 +19,50 @@ struct MeView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                TextField("Name", text: $name)
-                    .textContentType(.name)
-                    .font(.title)
-
-                TextField("Email address", text: $emailAddress)
-                    .textContentType(.emailAddress)
-                    .font(.title)
-                
-                Image(uiImage: qrCode)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 200, height: 200)
-                    .contextMenu {
-                        ShareLink(item: Image(uiImage: qrCode), preview: SharePreview("My QR Code", image: Image(uiImage: qrCode)))
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Your Details")
+                            .font(.headline)
+                            .padding(.bottom, 5)
+                        
+                        TextField("Name", text: $name)
+                            .textContentType(.name)
+                            .font(.system(size: 18))
+                            .padding()
+                            .background(RoundedRectangle(cornerRadius: 10).stroke(Color.gray, lineWidth: 1))
+                        
+                        TextField("Email address", text: $emailAddress)
+                            .textContentType(.emailAddress)
+                            .font(.system(size: 18))
+                            .padding()
+                            .background(RoundedRectangle(cornerRadius: 10).stroke(Color.gray, lineWidth: 1))
                     }
+                    .padding(.horizontal)
+                    
+                    VStack {
+                        Text("Your QR Code")
+                            .font(.headline)
+                        
+                        Image(uiImage: qrCode)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 200, height: 200)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                            .shadow(radius: 5)
+                            .contextMenu {
+                                ShareLink(item: Image(uiImage: qrCode), preview: SharePreview("My QR Code", image: Image(uiImage: qrCode)))
+                            }
+                    }
+                    .padding()
+                    
+                    Spacer()
+                }
             }
+            //.scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Your code")
             .onAppear(perform: updateCode)
             .onChange(of: name, updateCode)
@@ -50,13 +76,13 @@ struct MeView: View {
     
     func generateQRCode(from string: String) -> UIImage {
         filter.message = Data(string.utf8)
-
+        
         if let outputImage = filter.outputImage {
             if let cgimg = context.createCGImage(outputImage, from: outputImage.extent) {
                 return UIImage(cgImage: cgimg)
             }
         }
-
+        
         return UIImage(systemName: "xmark.circle") ?? UIImage()
     }
 }
