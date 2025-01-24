@@ -11,31 +11,53 @@ import CodeScanner
 import UserNotifications
 
 struct ProspectsView: View {
-    @Query(sort: \Prospect.name) var prospects: [Prospect]
+    @Query var prospects: [Prospect]
     @Environment(\.modelContext) var modelContext
     @State private var isShowingScanner = false
     @State private var selectedProspects = Set<Prospect>()
-    
-    
+    @State private var editingProspect: Prospect?
+    @State private var sortOption: SortOption = .name
+
+    enum SortOption: String, CaseIterable {
+        case name = "Name"
+        case mostRecent = "Most Recent"
+    }
+
     enum FilterType {
         case none, contacted, uncontacted
     }
     let filter: FilterType
-    
+
     var title: String {
         switch filter {
-        case .none:
-            "Everyone"
-        case .contacted:
-            "Contacted people"
-        case .uncontacted:
-            "Uncontacted people"
+        case .none: return "Everyone"
+        case .contacted: return "Contacted people"
+        case .uncontacted: return "Uncontacted people"
         }
     }
-    
+
+    var filteredProspects: [Prospect] {
+        let sortedProspects: [Prospect]
+        switch sortOption {
+        case .name:
+            sortedProspects = prospects.sorted { $0.name < $1.name }
+        case .mostRecent:
+            sortedProspects = prospects // Assuming most recent is based on insertion order
+        }
+
+        switch filter {
+        case .none:
+            return sortedProspects
+        case .contacted:
+            return sortedProspects.filter { $0.isContacted }
+        case .uncontacted:
+            return sortedProspects.filter { !$0.isContacted }
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            List(prospects, selection: $selectedProspects) { prospect in
+            List(filteredProspects, selection: $selectedProspects) { prospect in
                 HStack {
                     VStack(alignment: .leading) {
                         Text(prospect.name)
@@ -44,40 +66,46 @@ struct ProspectsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    statusImage(for: prospect)
+                    Image(systemName: prospect.isContacted ? "person.crop.circle.fill.badge.checkmark" : "person.crop.circle.badge.xmark")
+                        .foregroundColor(statusColor(for: prospect))
                 }
                 .swipeActions {
                     Button("Delete", systemImage: "trash", role: .destructive) {
                         modelContext.delete(prospect)
                     }
-                    
-                    if prospect.isContacted {
-                        Button("Mark Uncontacted", systemImage: "person.crop.circle.badge.xmark") {
-                            prospect.isContacted.toggle()
-                        }
-                        .tint(.blue)
-                    } else {
-                        Button("Mark Contacted", systemImage: "person.crop.circle.fill.badge.checkmark") {
-                            prospect.isContacted.toggle()
-                        }
-                        .tint(.green)
-                        
-                        Button("Remind Me", systemImage: "bell") {
-                            addNotification(for: prospect)
-                        }
-                        .tint(.orange)
+                    markButton(for: prospect)
+                    Button("Remind Me", systemImage: "bell") {
+                        NotificationManager.addNotification(for: prospect)
                     }
+                    .tint(.orange)
                 }
-                .tag(prospect)
+                .swipeActions(edge: .leading) {
+                    Button("Edit", systemImage: "pencil") {
+                        editingProspect = prospect
+                    }
+                    .tint(.blue)
+                }
+                .tag(prospect) // Важно для идентификации элемента в List
             }
             .navigationTitle(title)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort By", selection: $sortOption) {
+                            ForEach(SortOption.allCases, id: \.self) { option in
+                                Text(option.rawValue).tag(option)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Scan", systemImage: "qrcode.viewfinder") {
                         isShowingScanner = true
                     }
                 }
-                
                 ToolbarItem(placement: .topBarLeading) {
                     EditButton()
                 }
@@ -89,86 +117,64 @@ struct ProspectsView: View {
                 }
             }
             .sheet(isPresented: $isShowingScanner) {
-                CodeScannerView(codeTypes: [.qr], simulatedData: "Ahmad\nsaydulayev.wien@gmail.com", completion: handleScan)
+                CodeScannerView(codeTypes: [.qr], simulatedData: "Ahmad\nsaydulayev.wien@gmail.com") {
+                    handleScan(result: $0)
+                }
+            }
+            .sheet(item: $editingProspect) { prospect in
+                EditProspectView(prospect: prospect)
             }
         }
     }
-    
+
     init(filter: FilterType) {
         self.filter = filter
-        
         if filter != .none {
             let showContactedOnly = filter == .contacted
-            
             _prospects = Query(filter: #Predicate {
                 $0.isContacted == showContactedOnly
-            }, sort: [SortDescriptor(\Prospect.name)])
+            })
+        } else {
+            _prospects = Query()
         }
     }
-    
+
     func handleScan(result: Result<ScanResult, ScanError>) {
         isShowingScanner = false
         switch result {
         case .success(let result):
             let details = result.string.components(separatedBy: "\n")
             guard details.count == 2 else { return }
-            
             let person = Prospect(name: details[0], emailAddress: details[1], isContacted: false)
-            
             modelContext.insert(person)
         case .failure(let error):
             print("Scanning failed: \(error.localizedDescription)")
         }
     }
-    
+
     func delete() {
         for prospect in selectedProspects {
             modelContext.delete(prospect)
         }
+        selectedProspects.removeAll()
     }
-    
-    func addNotification(for prospect: Prospect) {
-        let center = UNUserNotificationCenter.current()
-        
-        let addRequest = {
-            let content = UNMutableNotificationContent()
-            content.title = "Contact \(prospect.name)"
-            content.subtitle = prospect.emailAddress
-            content.sound = UNNotificationSound.default
-            
-            var dateComponents = DateComponents()
-            dateComponents.hour = 9
-            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
-            
-            //            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
-            
-            
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-            center.add(request)
-        }
-        
-        center.getNotificationSettings { settings in
-            if settings.authorizationStatus == .authorized {
-                addRequest()
-            } else {
-                center.requestAuthorization(options: [.alert, .badge, .sound]) { success, error in
-                    if success {
-                        addRequest()
-                    } else if let error {
-                        print(error.localizedDescription)
-                    }
-                }
-            }
-        }
-    }
-    private func statusImage(for prospect: Prospect) -> some View {
+
+    private func markButton(for prospect: Prospect) -> some View {
         if prospect.isContacted {
-            return Image(systemName: "person.crop.circle.fill.badge.checkmark")
-                .foregroundColor(.green)
+            return Button("Mark Uncontacted", systemImage: "person.crop.circle.badge.xmark") {
+                prospect.isContacted.toggle()
+            }
+            .tint(.blue)
         } else {
-            return Image(systemName: "person.crop.circle.badge.xmark")
-                .foregroundColor(.blue)
+            return Button("Mark Contacted", systemImage: "person.crop.circle.fill.badge.checkmark") {
+                prospect.isContacted.toggle()
+            }
+            .tint(.green)
         }
+    }
+
+    private func statusColor(for prospect: Prospect) -> Color {
+        prospect.isContacted ? .green : .blue
     }
 }
 
@@ -176,3 +182,37 @@ struct ProspectsView: View {
     ProspectsView(filter: .none)
         .modelContainer(for: Prospect.self)
 }
+
+
+
+
+//import SwiftUI
+//import SwiftData
+//
+//struct EditProspectView: View {
+//    @Environment(\.dismiss) private var dismiss
+//    @Environment(\.modelContext) private var modelContext
+//    
+//    @Bindable var prospect: Prospect   // iOS 17: даёт прямое привязку к полям
+//
+//    var body: some View {
+//        NavigationStack {
+//            Form {
+//                Section("Основные данные") {
+//                    TextField("Имя", text: $prospect.name)
+//                    TextField("Email", text: $prospect.emailAddress)
+//                }
+//            }
+//            .navigationTitle("Редактирование")
+//            .toolbar {
+//                ToolbarItem(placement: .topBarTrailing) {
+//                    Button("Готово") {
+//                        // Можно вызвать сохранение явно (для надёжности)
+//                        try? modelContext.save()
+//                        dismiss()
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
