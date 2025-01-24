@@ -15,7 +15,7 @@ struct ProspectsView: View {
     @Environment(\.modelContext) var modelContext
     @State private var isShowingScanner = false
     @State private var selectedProspects = Set<Prospect>()
-
+    
     
     enum FilterType {
         case none, contacted, uncontacted
@@ -36,11 +36,15 @@ struct ProspectsView: View {
     var body: some View {
         NavigationStack {
             List(prospects, selection: $selectedProspects) { prospect in
-                VStack(alignment: .leading) {
-                    Text(prospect.name)
-                        .font(.headline)
-                    Text(prospect.emailAddress)
-                        .foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(prospect.name)
+                            .font(.headline)
+                        Text(prospect.emailAddress)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    statusImage(for: prospect)
                 }
                 .swipeActions {
                     Button("Delete", systemImage: "trash", role: .destructive) {
@@ -92,10 +96,10 @@ struct ProspectsView: View {
     
     init(filter: FilterType) {
         self.filter = filter
-
+        
         if filter != .none {
             let showContactedOnly = filter == .contacted
-
+            
             _prospects = Query(filter: #Predicate {
                 $0.isContacted == showContactedOnly
             }, sort: [SortDescriptor(\Prospect.name)])
@@ -103,14 +107,14 @@ struct ProspectsView: View {
     }
     
     func handleScan(result: Result<ScanResult, ScanError>) {
-       isShowingScanner = false
+        isShowingScanner = false
         switch result {
         case .success(let result):
             let details = result.string.components(separatedBy: "\n")
             guard details.count == 2 else { return }
-
+            
             let person = Prospect(name: details[0], emailAddress: details[1], isContacted: false)
-
+            
             modelContext.insert(person)
         case .failure(let error):
             print("Scanning failed: \(error.localizedDescription)")
@@ -125,20 +129,20 @@ struct ProspectsView: View {
     
     func addNotification(for prospect: Prospect) {
         let center = UNUserNotificationCenter.current()
-
+        
         let addRequest = {
             let content = UNMutableNotificationContent()
             content.title = "Contact \(prospect.name)"
             content.subtitle = prospect.emailAddress
             content.sound = UNNotificationSound.default
-
-//            var dateComponents = DateComponents()
-//            dateComponents.hour = 9
-//            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
             
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
-
-
+            var dateComponents = DateComponents()
+            dateComponents.hour = 9
+            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
+            
+            //            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+            
+            
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
             center.add(request)
         }
@@ -155,6 +159,15 @@ struct ProspectsView: View {
                     }
                 }
             }
+        }
+    }
+    private func statusImage(for prospect: Prospect) -> some View {
+        if prospect.isContacted {
+            return Image(systemName: "person.crop.circle.fill.badge.checkmark")
+                .foregroundColor(.green)
+        } else {
+            return Image(systemName: "person.crop.circle.badge.xmark")
+                .foregroundColor(.blue)
         }
     }
 }
