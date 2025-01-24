@@ -79,13 +79,14 @@ struct ProspectsView: View {
                     }
                     .tint(.orange)
                 }
+                .tag(prospect)
                 .swipeActions(edge: .leading) {
                     Button("Edit", systemImage: "pencil") {
                         editingProspect = prospect
                     }
                     .tint(.blue)
                 }
-                .tag(prospect) // Важно для идентификации элемента в List
+                .tag(prospect)
             }
             .navigationTitle(title)
             .toolbar {
